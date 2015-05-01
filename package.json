@@ -1,0 +1,33 @@
+{
+  "name": "gulp-forkat",
+  "version": "0.0.0",
+  "description": "Split the stream, merge the substreams back, cache the state",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hoho/gulp-forkat.git"
+  },
+  "keywords": [
+    "gulpplugin",
+    "merge",
+    "split",
+    "cache"
+  ],
+  "author": "Marat Abdullin <dakota@brokenpipe.ru>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/hoho/gulp-forkat/issues"
+  },
+  "homepage": "https://github.com/hoho/gulp-forkat",
+  "dependencies": {
+    "gulp-util": "~3.0.0",
+    "through": "~2.3.4"
+  },
+  "devDependencies": {
+    "mocha": "*",
+    "should": "*"
+  }
+}
