@@ -64,21 +64,18 @@ describe('gulp-forkat', function() {
                 'test/file1.txt: file1.txt\n',
                 'test/file3.css: /* file3.css */\n',
                 'task2',
-                'run1',
-                'run2',
-                'run2',
                 'run2',
                 'run3',
-                'test/file2.css: ololo',
-                'test/file3.txt: ololo',
+                'test/file2.css: /* file2.css */\n',
+                'test/file3.txt: file3.txt\n',
                 'test/file2.txt: ololo',
-                'test/file1.txt: ololo',
+                'test/file1.txt: file1.txt\n',
                 'test/file3.css: ololo',
                 'task1',
-                'test/file2.css: ololo',
-                'test/file3.txt: ololo',
+                'test/file2.css: /* file2.css */\n',
+                'test/file3.txt: file3.txt\n',
                 'test/file2.txt: ololo',
-                'test/file1.txt: ololo',
+                'test/file1.txt: file1.txt\n',
                 'test/file3.css: ololo'
             ]
 
@@ -119,10 +116,10 @@ describe('gulp-forkat', function() {
                         }
                     });
 
-                    files.forEach(function(filename) {
+                    files.forEach(function(filename, index) {
                         stream.push(new File({
                             path: filename,
-                            contents: tasks > 2 ? fs.readFileSync(filename) : new Buffer('ololo')
+                            contents: tasks < 3 && (index === 1 || index === 5) ? new Buffer('ololo') : fs.readFileSync(filename)
                         }));
                     });
 

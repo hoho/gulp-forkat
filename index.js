@@ -13,6 +13,7 @@ var Buffer = require('buffer').Buffer;
 var fs = require('fs');
 var path = require('path');
 var minimatch = require('minimatch');
+var deepEqual = require('assert').deepEqual;
 
 
 function createFile(path, content) {
@@ -26,7 +27,8 @@ function createFile(path, content) {
 module.exports = function() {
     var index = 0;
     var curSrc = [];
-    var prevSrc = [];
+    var curStreams = [];
+    var prevStreams = [];
     var cache = [];
     var merged;
 
@@ -80,99 +82,127 @@ module.exports = function() {
                     throw new PluginError('gulp-forkat', 'No merge called');
                 }
 
-                var cur = curSrc[i] || [];
-                var prev = prevSrc[i] || [];
-                var same = cur.length === prev.length;
+                var src = curSrc[i] || [];
+                var filteredMap = {};
+                var filtered;
 
-                if (same) {
-                    for (var j = 0; j < cur.length; j++) {
-                        if (cur[j].path !== prev[j].path ||
-                            cur[j].contents !== prev[j].contents)
-                        {
-                            same = false;
-                            break;
-                        }
-                    }
+                if (!settings.match || !settings.match.length) {
+                    filtered = src;
+                } else {
+                    filtered = [];
+                    settings.match.forEach(function(pattern) {
+                        src.forEach(function(file) {
+                            if (!(file.path in filteredMap)) {
+                                if (minimatch(file.path, pattern)) {
+                                    filteredMap[file.path] = true;
+                                    filtered.push(file);
+                                }
+                            }
+                        });
+                    });
                 }
 
-                if (!same) {
-                    var filteredMap = {};
-                    var filtered;
-                    var cached = cache[i] = [];
-                    var substreams = [];
+                var cur = [];
+                var prev = prevStreams[i] || [];
 
-                    if (!settings.match || !settings.match.length) {
-                        filtered = cur;
-                    } else {
-                        filtered = [];
-                        settings.match.forEach(function(pattern) {
-                            cur.forEach(function(file) {
-                                if (!(file.path in filteredMap)) {
-                                    if (minimatch(file.path, pattern)) {
-                                        filteredMap[file.path] = true;
-                                        filtered.push(file);
-                                    }
-                                }
-                            });
-                        });
-                    }
+                if (settings.each) {
+                    // Make a substream for each file.
+                    cur = filtered.map(function(file) { return [file]; });
+                } else {
+                    cur.push(filtered);
+                }
+
+                curStreams[i] = cur;
+
+                var oldCached = cache[i] || {};
+                var oldCachedMap = oldCached.map || {};
+                var cached = cache[i] = {streams: [], map: {}};
+
+                cur.forEach(function(files, index) {
+                    var same;
+                    var first;
+                    var key;
 
                     if (settings.each) {
-                        // Make a substream for each file.
-                        filtered.forEach(function(file) {
-                            substreams.push([file]);
-                        });
+                        first = files[0];
+                        key = first.path;
+
+                        if (key in oldCachedMap) {
+                            var tmp = oldCachedMap[key];
+                            same = tmp.contents === first.contents;
+
+                            if (same) {
+                                cached.streams.push(tmp.cached);
+                                cached.map[key] = tmp;
+                            }
+                        } else {
+                            same = false;
+                        }
                     } else {
-                        substreams.push(filtered);
+                        try {
+                            deepEqual(files, prev[index]);
+                            cached = cache[i] = oldCached;
+                            same = true;
+                        } catch(e) {
+                            same = false;
+                        }
                     }
 
-                    substreams.forEach(function(src) {
-                        var cachedSubstream = [];
-                        cached.push(cachedSubstream);
+                    if (!same) {
+                        var cachedResult = [];
+                        cached.streams.push(cachedResult);
 
-                        var substream = through.obj(function(file, _, cb) {
+                        if (settings.each) {
+                            cached.map[key] = {
+                                contents: first.contents,
+                                cached: cachedResult
+                            };
+                        }
+
+                        var src = through.obj(function(file, _, cb) {
                             this.push(file);
                             cb();
                         });
 
-                        var ret = callback(substream);
+                        var ret = callback(src);
 
                         if (!ret || (typeof ret.on !== 'function')) {
                             throw new PluginError('gulp-forkat', 'Callback should return a file stream');
                         }
 
                         ret.on('data', function(file) {
-                            cachedSubstream.push({
+                            cachedResult.push({
                                 path: file.path,
                                 contents: file.contents.toString()
                             });
                         });
 
-                        src.forEach(function(file) {
-                            substream.push(createFile(file.path, file.contents));
+                        files.forEach(function(file) {
+                            src.push(createFile(file.path, file.contents));
                         });
 
-                        substream.end();
-                    });
-                }
+                        src.end();
+                    }
+                });
 
-                if (i === curSrc.length - 1) {
-                    while (cache.length > curSrc.length) {
+                if (i === index - 1) {
+                    while (cache.length > index) {
                         // Cleanup the cache in case the new one is shorter.
                         cache.pop();
                     }
 
-                    cache.forEach(function(substreams) {
-                        (substreams || []).forEach(function(substream) {
-                            (substream || []).forEach(function(file) {
+                    cache.forEach(function(cached) {
+                        ((cached || {}).streams || []).forEach(function(files) {
+                            (files || []).forEach(function(file) {
                                 merged.push(createFile(file.path, file.contents));
                             });
                         });
                     });
 
                     index = 0;
-                    prevSrc = curSrc;
                     curSrc = [];
+                    prevStreams = curStreams;
+                    curStreams = [];
                     merged = undefined;
                 }
             });
@@ -181,68 +211,4 @@ module.exports = function() {
         })(index++);
 
     };
-
-/*
-
-
-    var oldFiles = [],
-        newFiles = [];
-
-    if (typeof files === 'object') {
-        for (var file in files) {
-            if (files.hasOwnProperty(file)) {
-                newFiles.push(createFile(file, files[file]));
-            }
-        }
-        before = content;
-    } else if (typeof files === 'string') {
-        switch (typeof content) {
-            case 'string':
-                newFiles.push(createFile(files, content));
-                break;
-
-            default:
-                throw new PluginError('gulp-add', 'Unknown argument type');
-        }
-    } else {
-        throw new PluginError('gulp-add', 'Unknown argument type');
-    }
-
-    if ((before !== undefined) && (typeof before !== 'boolean')) {
-        throw new PluginError('gulp-add', '`before` argument should be boolean');
-    }
-
-    function bufferContents(file) {
-        if (file.isNull()) { return; }
-        if (file.isStream()) { return this.emit('error', new PluginError('gulp-add',  'Streaming not supported')); }
-
-        oldFiles.push(file);
-    }
-
-    function endStream() {
-        try {
-            var i;
-
-            if (before) {
-                // Insert new files before old ones.
-                i = oldFiles;
-                oldFiles = newFiles;
-                newFiles = i;
-            }
-
-            for (i = 0; i < oldFiles.length; i++) {
-                this.emit('data', oldFiles[i]);
-            }
-
-            for (i = 0; i < newFiles.length; i++) {
-                this.emit('data', newFiles[i]);
-            }
-        } catch(e) {
-            return this.emit('error', new PluginError('gulp-add', e.message));
-        }
-
-        this.emit('end');
-    }
-
-    return through(bufferContents, endStream);*/
 };
